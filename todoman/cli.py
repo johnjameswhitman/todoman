@@ -3,14 +3,19 @@ import functools
 import glob
 import locale
 import sys
+import traceback
+import time
 from contextlib import contextmanager
 from datetime import datetime
 from datetime import timedelta
 from os.path import isdir
+from pathlib import Path
+from pprint import pprint
 from typing import Tuple
 
 import click
 import click_log
+from click import shell_completion
 
 from todoman import exceptions
 from todoman import formatters
@@ -342,12 +347,39 @@ with contextlib.suppress(ImportError):
     click_repl.register_repl(cli, name="shell")
 
 
+class ListType(click.ParamType):
+    name = "list"
+
+    def shell_complete(self, ctx, param, incomplete):
+        log_lines = []
+        log_lines.append("="*80)
+        log_lines.append("Hello from shell_complete for ListType")
+        log_lines.append("-"*80)
+        log_lines.append("Traceback...")
+        for line in traceback.format_stack():
+            log_lines.append(f"\t{line}")
+        log_lines.append("-"*80)
+        log_lines.append("dir(ctx)")
+        log_lines.append(str(ctx))
+        log_lines.append(str(dir(ctx)))
+        log_lines.append("-"*80)
+        log_lines.append("="*80)
+        with Path(f"completion_debug_{time.time()}.log") as log:
+            log.write_text("\n".join(log_lines))
+
+        return [
+            shell_completion.CompletionItem(l)
+            for l in ["aa", "ab", "cc"] if l.startswith(incomplete)
+        ]
+
+
 @cli.command()
 @click.argument("summary", nargs=-1)
 @click.option(
     "--list",
     "-l",
     callback=_validate_list_param,
+    type=ListType(),
     help="List in which the task will be saved.",
 )
 @click.option(
