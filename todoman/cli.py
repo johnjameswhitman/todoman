@@ -3,19 +3,16 @@ import functools
 import glob
 import locale
 import sys
-import traceback
-import time
 from contextlib import contextmanager
 from datetime import datetime
 from datetime import timedelta
 from os.path import isdir
-from pathlib import Path
-from pprint import pprint
 from typing import Tuple
 
 import click
 import click_log
 from click import shell_completion
+from click.testing import CliRunner
 
 from todoman import exceptions
 from todoman import formatters
@@ -351,25 +348,25 @@ class ListType(click.ParamType):
     name = "list"
 
     def shell_complete(self, ctx, param, incomplete):
-        log_lines = []
-        log_lines.append("="*80)
-        log_lines.append("Hello from shell_complete for ListType")
-        log_lines.append("-"*80)
-        log_lines.append("Traceback...")
-        for line in traceback.format_stack():
-            log_lines.append(f"\t{line}")
-        log_lines.append("-"*80)
-        log_lines.append("dir(ctx)")
-        log_lines.append(str(ctx))
-        log_lines.append(str(dir(ctx)))
-        log_lines.append("-"*80)
-        log_lines.append("="*80)
-        with Path(f"completion_debug_{time.time()}.log") as log:
-            log.write_text("\n".join(log_lines))
+        ctx = ctx.ensure_object(AppContext)
+        try:
+            ctx.config = load_config()
+        except ConfigurationError as e:
+            raise click.ClickException(e.args[0]) from None
+
+        paths = [
+            path
+            for path in glob.iglob(ctx.config["path"])
+            if isdir(path) and not path.endswith("__pycache__")
+        ]
+        if len(paths) == 0:
+            raise exceptions.NoListsFoundError(ctx.config["path"])
+
+        ctx.db = Database(paths, ctx.config["cache_path"])
 
         return [
-            shell_completion.CompletionItem(l)
-            for l in ["aa", "ab", "cc"] if l.startswith(incomplete)
+            shell_completion.CompletionItem(l.name)
+            for l in ctx.db.lists() if l.name.lower().startswith(incomplete.lower())
         ]
 
 
@@ -688,3 +685,8 @@ def list(ctx, *args, **kwargs):
 
     todos = ctx.db.todos(**kwargs)
     click.echo(ctx.formatter.compact_multiple(todos, hide_list))
+
+
+if __name__ == "__main__":
+    runner = CliRunner()
+    result = runner.invoke(cli, ["new", "--list", "R"])
